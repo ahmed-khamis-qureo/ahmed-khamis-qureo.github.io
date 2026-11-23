@@ -18,7 +18,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const norm=s=>String(s).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).toLowerCase().trim();
 const footer=()=>'<footer>إعداد وتصميم أحمد بن خميس. مرجع للحلول المحفوظة، بدون تسجيل دخول أو حل آلي. طابق نص السؤال قبل النسخ؛ ترتيب الأسئلة والاختيارات ممكن يختلف. بيانات الأرشيف: ٢١ نوفمبر ٢٠٢٦. بعض الأسئلة مختصرة في الأرشيف؛ طابق البرنامج والاختيارات في حسابك.</footer>';
 const btn=(label,action,cls='',disabled=false)=>`<button type="button" class="btn ${cls}" data-action="${action}" ${disabled?'disabled':''}>${label}</button>`;
-const codeRE=/^\s*(let |const |var |for\s*\(|if\s*\(|else|console\.|function |return |[{}]|<[/a-z]|[a-zA-Z_][a-zA-Z0-9_]*\s*[=(.])/;
+const codeRE=/^\s*(let |const |var |for\s*\(|if\s*\(|else|console\.|function |return |[{}]|<[/a-z]|[.#][a-zA-Z_-]|[a-zA-Z][a-zA-Z-]*\s*:\s*\S|[a-zA-Z_][a-zA-Z0-9_]*\s*[=(.])/;
 const prompt=t=>'<div class="prompt">'+String(t).replace(/\n{3,}/g,'\n\n').split('\n').map(l=>`<div dir="${codeRE.test(l)?'ltr':'rtl'}">${esc(l)||' '}</div>`).join('')+'</div>';
 const hl=t=>{const re=/(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)|\b(let|const|var|function|return|if|else|for|while|of|in|new|typeof|switch|case|break|continue|true|false|null|undefined|do|this)\b|(\b\d+(?:\.\d+)?\b)/g;let out='',at=0,m;while((m=re.exec(t))){out+=esc(t.slice(at,m.index))+`<span class="${m[1]?'comment':m[2]?'str':m[3]?'kw':'n'}">${esc(m[0])}</span>`;at=m.index+m[0].length}return out+esc(t.slice(at))};
 let copies=[];
