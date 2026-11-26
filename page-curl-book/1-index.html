@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>كتاب تفاعلي - تقليب ورقي واقعي</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      background: #111318;
+      font-family: 'Cairo', sans-serif;
+      height: 100dvh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      touch-action: none; /* مهم جداً لسلاسة السحب على الموبايل */
+    }
+
+    /* حاوية الكتاب المتجاوبة */
+    .book-wrapper {
+      position: relative;
+      width: 94vw;
+      max-width: 920px;
+      height: 78dvh;
+      max-height: 620px;
+      border-radius: 14px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.75);
+      overflow: hidden;
+      background: #f8fafc;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
+    }
+
+    /* تلميح السحب للموبايل */
+    .swipe-hint {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.75);
+      color: #fff;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      pointer-events: none;
+      backdrop-filter: blur(6px);
+      animation: fadePulse 2.5s infinite;
+    }
+
+    @keyframes fadePulse {
+      0%, 100% { opacity: 0.55; }
+      50% { opacity: 1; }
+    }
+
+    /* شريط التحكم السفلي */
+    .controls {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      padding: 10px 24px;
+      border-radius: 50px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .btn {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 25px;
+      font-family: 'Cairo', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: transform 0.15s, background 0.2s;
+    }
+    .btn:active {
+      transform: scale(0.95);
+    }
+    .btn:disabled {
+      background: #334155;
+      color: #64748b;
+      cursor: not-allowed;
+    }
+
+    .page-num {
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      font-weight: 600;
+      min-width: 75px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="book-wrapper" id="wrapper">
+    <canvas id="curl-canvas"></canvas>
+    <div class="swipe-hint" id="hint">اسحب طرف الصفحة بصبعك للتقليب 👆</div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="prev-btn" onclick="triggerAutoFlip(-1)" disabled>السابق</button>
+    <span class="page-num" id="page-indicator">1 / 4</span>
+    <button class="btn" id="next-btn" onclick="triggerAutoFlip(1)">التالي</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('curl-canvas');
+    const ctx = canvas.getContext('2d');
+    const wrapper = document.getElementById('wrapper');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const pageIndicator = document.getElementById('page-indicator');
+
+    let W = 0, H = 0, dpr = 1;
+
+    // ==========================================
+    // 1. محتوى الصفحات (تقدر تضيف أي عدد صفحات أو صور هنا)
+    // ==========================================
+    const pagesData = [
+      {
+        bg: '#f1f5f9',
+        accent: '#dc2626',
+        tag: 'الفصل الأول • مقدمة تشريحية',
+        title: 'The Human Heart',
+        body: 'القلب البشري هو العضو الحيوي المسؤول عن ضخ الدم عبر الجهاز الدوري بالكامل، ليغذي كل خلية بالأكسجين والعناصر الغذائية دون توقف.',
+        visualType: 'heart'
+      },
+      {
+        bg: '#ffffff',
+        accent: '#2563eb',
+        tag: 'الفصل الثاني • التركيب الداخلي',
+        title: 'Structure of the Heart',
+        body: 'ينقسم القلب إلى أربع حجرات رئيسية: الأذين الأيمن والأيسر، والبطين الأيمن والأيسر، وتتحكم الصمامات في مرور الدم في اتجاه واحد بدقة مذهلة.',
+        visualType: 'chambers'
+      },
+      {
+        bg: '#f8fafc',
+        accent: '#059669',
+        tag: 'الفصل الثالث • الدورة الدموية',
+        title: 'Blood Circulation',
+        body: 'يعمل القلب كمضخة مزدوجة؛ الجانب الأيمن يرسل الدم إلى الرئتين لتنقيته بالأكسجين، والجانب الأيسر يدفعه بقوة إلى جميع أنحاء الجسم.',
+        visualType: 'wave'
+      },
+      {
+        bg: '#0f172a',
+        accent: '#38bdf8',
+        tag: 'نهاية العرض التفاعلي',
+        title: 'تمت القراءة بنجاح',
+        body: 'هذا التأثير مبني بالكامل بالرياضيات الهندسية على HTML5 Canvas ليعمل بسلاسة 60 إطار في الثانية على أي هاتف أو حاسوب.',
+        visualType: 'dark'
+      }
+    ];
+
+    // تخزين كل صفحة كصورة جاهزة (Offscreen Canvas) لأقصى سرعة على الموبايل
+    let pageCanvases = [];
+
+    function renderPageOffscreen(data, index) {
+      const off = document.createElement('canvas');
+      off.width = W * dpr;
+      off.height = H * dpr;
+      const c = off.getContext('2d');
+      c.scale(dpr, dpr);
+
+      const isDark = data.visualType === 'dark';
+
+      // خلفية الصفحة الورقية
+      c.fillStyle = data.bg;
+      c.fillRect(0, 0, W, H);
+
+      // ملمس ورقي خفيف وتظليل عند الحواف
+      const grad = c.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0, 'rgba(0,0,0,0.06)');
+      grad.addColorStop(0.05, 'rgba(0,0,0,0)');
+      grad.addColorStop(0.95, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.08)');
+      c.fillStyle = grad;
+      c.fillRect(0, 0, W, H);
+
+      // تحديد التخطيط حسب حجم الشاشة (موبايل عمودي أو شاشة عريضة)
+      const isMobile = W < 600;
+      const pad = isMobile ? 26 : 48;
+
+      // الشريط العلوي
+      c.fillStyle = data.accent;
+      c.font = `700 ${isMobile ? 13 : 15}px Cairo`;
+      c.textAlign = 'right';
+      c.fillText(data.tag, W - pad, pad + 10);
+
+      // العنوان الرئيسي
+      c.fillStyle = isDark ? '#f8fafc' : '#0f172a';
+      c.font = `800 ${isMobile ? 26 : 36}px Cairo`;
+      c.fillText(data.title, W - pad, pad + (isMobile ? 52 : 65));
+
+      // رسم توضيحي داخل الصفحة
+      const boxY = pad + (isMobile ? 75 : 90);
+      const boxH = isMobile ? H * 0.28 : H * 0.34;
+      const boxW = W - pad * 2;
+
+      c.save();
+      c.fillStyle = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(15, 23, 42, 0.04)';
+      roundRect(c, pad, boxY, boxW, boxH, 16);
+      c.fill();
+
+      // رسم رمز القلب أو نبض ECG داخل الصندوق
+      c.strokeStyle = data.accent;
+      c.lineWidth = 3.5;
+      c.beginPath();
+      const midY = boxY + boxH / 2;
+      for (let x = pad + 20; x < W - pad - 20; x += 4) {
+        const rel = (x - pad) / boxW;
+        let y = midY + Math.sin(rel * 18) * 8;
+        if (Math.abs(rel - 0.5) < 0.06) {
+          y = midY - Math.cos((rel - 0.5) * 50) * (boxH * 0.32);
+        }
+        if (x === pad + 20) c.moveTo(x, y);
+        else c.lineTo(x, y);
+      }
+      c.stroke();
+      c.restore();
+
+      // النص التوضيحي (Wrap Text)
+      c.fillStyle = isDark ? '#cbd5e1' : '#334155';
+      c.font = `400 ${isMobile ? 16 : 20}px Cairo`;
+      wrapText(c, data.body, W - pad, boxY + boxH + (isMobile ? 36 : 45), W - pad * 2, isMobile ? 28 : 34);
+
+      // رقم الصفحة في الأسفل
+      c.fillStyle = isDark ? '#64748b' : '#94a3b8';
+      c.font = '600 14px Cairo';
+      c.textAlign = 'left';
+      c.fillText(`صفحة ${index + 1}`, pad, H - 22);
+
+      return off;
+    }
+
+    function roundRect(c, x, y, w, h, r) {
+      c.beginPath();
+      c.moveTo(x + r, y);
+      c.arcTo(x + w, y, x + w, y + h, r);
+      c.arcTo(x + w, y + h, x, y + h, r);
+      c.arcTo(x, y + h, x, y, r);
+      c.arcTo(x, y, x + w, y, r);
+      c.closePath();
+    }
+
+    function wrapText(c, text, x, y, maxWidth, lineHeight) {
+      const words = text.split(' ');
+      let line = '';
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = c.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+          c.fillText(line, x, y);
+          line = words[n] + ' ';
+          y += lineHeight;
+        } else {
+          line = testLine;
+        }
+      }
+      c.fillText(line, x, y);
+    }
+
+    // ==========================================
+    // 2. صوت تقليب الورق الواقعي (Web Audio API)
+    // ==========================================
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playPaperSound() {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const len = audioCtx.sampleRate * 0.28;
+      const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(750, audioCtx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(2400, audioCtx.currentTime + 0.25);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.01, audioCtx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.16, audioCtx.currentTime + 0.07);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.28);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      src.start();
+    }
+
+    // ==========================================
+    // 3. محرك تقليب الورقة المنحني (Realistic Page Curl Engine)
+    // ==========================================
+    let currentPage = 0;
+    let isDragging = false;
+    let isAnimating = false;
+    let flipDirection = 1; // 1 = التالي, -1 = السابق
+
+    // نقطة سحب الورقة (Pointer) ونقطة الارتكاز (Corner)
+    let corner = { x: 0, y: 0 };
+    let pointer = { x: 0, y: 0 };
+    let target = { x: 0, y: 0 };
+
+    function resize() {
+      const rect = wrapper.getBoundingClientRect();
+      W = rect.width;
+      H = rect.height;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      pageCanvases = pagesData.map((d, i) => renderPageOffscreen(d, i));
+      drawScene();
+    }
+
+    function updateControls() {
+      prevBtn.disabled = currentPage === 0;
+      nextBtn.disabled = currentPage === pagesData.length - 1;
+      pageIndicator.textContent = `${currentPage + 1} / ${pagesData.length}`;
+    }
+
+    // الحساب الهندسي لخط الطيّ (Fold Line) وانعكاس الورقة
+    function drawPageCurl(frontCanvas, backCanvas, cornerPt, dragPt) {
+      // رسم الصفحة الخلفية (التي ستظهر تحت الورقة المقلوبة)
+      ctx.drawImage(backCanvas, 0, 0, W, H);
+
+      // المتجه من نقطة الارتكاز إلى مكان الصبع
+      let dx = dragPt.x - cornerPt.x;
+      let dy = dragPt.y - cornerPt.y;
+      let dist = Math.hypot(dx, dy);
+
+      if (dist < 1) {
+        ctx.drawImage(frontCanvas, 0, 0, W, H);
+        return;
+      }
+
+      // تقييد أقصى مسافة سحب حتى لا تنفصل الورقة عن كعب الكتاب
+      const maxDist = W * 1.45;
+      if (dist > maxDist) {
+        dragPt.x = cornerPt.x + (dx / dist) * maxDist;
+        dragPt.y = cornerPt.y + (dy / dist) * maxDist;
+        dx = dragPt.x - cornerPt.x;
+        dy = dragPt.y - cornerPt.y;
+        dist = maxDist;
+      }
+
+      // منتصف المسافة هو مركز خط الطيّ
+      const midX = (cornerPt.x + dragPt.x) * 0.5;
+      const midY = (cornerPt.y + dragPt.y) * 0.5;
+
+      // زاوية خط الطيّ العمودي على متجه السحب
+      const angle = Math.atan2(dy, dx);
+      const perpAngle = angle + Math.PI / 2;
+      const L = Math.max(W, H) * 2.5;
+
+      const p1x = midX + Math.cos(perpAngle) * L;
+      const p1y = midY + Math.sin(perpAngle) * L;
+      const p2x = midX - Math.cos(perpAngle) * L;
+      const p2y = midY - Math.sin(perpAngle) * L;
+
+      // 1. رسم الجزء المتبقي من الصفحة الحالية (قبل خط الطيّ)
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1x, p1y);
+      ctx.lineTo(p2x, p2y);
+      ctx.lineTo(p2x - Math.cos(angle) * L, p2y - Math.sin(angle) * L);
+      ctx.lineTo(p1x - Math.cos(angle) * L, p1y - Math.sin(angle) * L);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(frontCanvas, 0, 0, W, H);
+
+      // ظل ناعم تسقطه الورقة المثنية على الصفحة اللي تحتها
+      const shadowGrad = ctx.createLinearGradient(
+        midX, midY,
+        midX + Math.cos(angle) * (dist * 0.45),
+        midY + Math.sin(angle) * (dist * 0.45)
+      );
+      shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+      shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = shadowGrad;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+
+      // 2. رسم ظهر الورقة المقلوبة (المتنية) بانعكاس هندسي دقيق
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1x, p1y);
+      ctx.lineTo(p2x, p2y);
+      ctx.lineTo(p2x + Math.cos(angle) * L, p2y + Math.sin(angle) * L);
+      ctx.lineTo(p1x + Math.cos(angle) * L, p1y + Math.sin(angle) * L);
+      ctx.closePath();
+      ctx.clip();
+
+      // تطبيق مصفوفة الانعكاس حول خط الطيّ
+      ctx.translate(dragPt.x, dragPt.y);
+      ctx.rotate(2 * angle - Math.PI);
+      ctx.scale(-1, 1);
+      ctx.translate(-cornerPt.x, -cornerPt.y);
+
+      ctx.drawImage(frontCanvas, 0, 0, W, H);
+
+      // تظليل أسطواني (Cylinder Shading) لإعطاء إحساس انحناء الورقة زي الفيديو بالظبط
+      ctx.restore();
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1x, p1y);
+      ctx.lineTo(p2x, p2y);
+      ctx.lineTo(p2x + Math.cos(angle) * L, p2y + Math.sin(angle) * L);
+      ctx.lineTo(p1x + Math.cos(angle) * L, p1y + Math.sin(angle) * L);
+      ctx.closePath();
+      ctx.clip();
+
+      const curlGrad = ctx.createLinearGradient(
+        midX, midY,
+        midX + Math.cos(angle) * Math.min(dist * 0.5, 90),
+        midY + Math.sin(angle) * Math.min(dist * 0.5, 90)
+      );
+      curlGrad.addColorStop(0, 'rgba(255, 255, 255, 0.88)'); // ضهر الورقة الأبيض اللامع
+      curlGrad.addColorStop(0.25, 'rgba(241, 245, 249, 0.72)');
+      curlGrad.addColorStop(0.7, 'rgba(203, 213, 225, 0.45)');
+      curlGrad.addColorStop(1, 'rgba(15, 23, 42, 0.25)');
+      ctx.fillStyle = curlGrad;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
+    function drawScene() {
+      ctx.clearRect(0, 0, W, H);
+      if (!isDragging && !isAnimating) {
+        ctx.drawImage(pageCanvases[currentPage], 0, 0, W, H);
+        return;
+      }
+
+      if (flipDirection === 1 && currentPage < pagesData.length - 1) {
+        drawPageCurl(pageCanvases[currentPage], pageCanvases[currentPage + 1], corner, pointer);
+      } else if (flipDirection === -1 && currentPage > 0) {
+        drawPageCurl(pageCanvases[currentPage - 1], pageCanvases[currentPage], corner, pointer);
+      } else {
+        ctx.drawImage(pageCanvases[currentPage], 0, 0, W, H);
+      }
+    }
+
+    // ==========================================
+    // 4. أحداث اللمس للموبايل والماوس للكمبيوتر
+    // ==========================================
+    function getPos(e) {
+      const rect = wrapper.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top
+      };
+    }
+
+    function onStart(e) {
+      if (isAnimating) return;
+      document.getElementById('hint').style.display = 'none';
+      const pos = getPos(e);
+
+      // تحديد هل المستخدم بيسحب للصفحة التالية أم السابقة
+      if (pos.x < W * 0.5 && currentPage < pagesData.length - 1) {
+        // سحب من اليسار لليمين (تقليب عربي RTL للصفحة التالية)
+        flipDirection = 1;
+        corner = { x: 0, y: pos.y > H * 0.5 ? H : 0 };
+        pointer = { ...pos };
+        isDragging = true;
+      } else if (pos.x >= W * 0.5 && currentPage > 0) {
+        // سحب من اليمين لليسار للرجوع للصفحة السابقة
+        flipDirection = -1;
+        corner = { x: 0, y: pos.y > H * 0.5 ? H : 0 };
+        pointer = { ...pos };
+        isDragging = true;
+      }
+    }
+
+    function onMove(e) {
+      if (!isDragging) return;
+      e.preventDefault();
+      pointer = getPos(e);
+      drawScene();
+    }
+
+    function onEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      isAnimating = true;
+
+      // هل تم سحب الورقة لمسافة كافية لإتمام التقليب؟
+      const passedThreshold = pointer.x > W * 0.35;
+
+      if (flipDirection === 1) {
+        target = passedThreshold ? { x: W * 1.35, y: corner.y } : { x: 0, y: corner.y };
+        if (passedThreshold) playPaperSound();
+      } else {
+        target = !passedThreshold ? { x: 0, y: corner.y } : { x: W * 1.35, y: corner.y };
+        if (!passedThreshold) playPaperSound();
+      }
+
+      animateToTarget(passedThreshold);
+    }
+
+    function animateToTarget(completed) {
+      function step() {
+        pointer.x += (target.x - pointer.x) * 0.16;
+        pointer.y += (target.y - pointer.y) * 0.16;
+        drawScene();
+
+        if (Math.hypot(target.x - pointer.x, target.y - pointer.y) > 2) {
+          requestAnimationFrame(step);
+        } else {
+          isAnimating = false;
+          if (flipDirection === 1 && completed) {
+            currentPage++;
+          } else if (flipDirection === -1 && !completed) {
+            currentPage--;
+          }
+          updateControls();
+          drawScene();
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    // التقليب التلقائي عند الضغط على الأزرار (نفس حركة الفيديو بالمللي)
+    function triggerAutoFlip(dir) {
+      if (isAnimating || isDragging) return;
+      document.getElementById('hint').style.display = 'none';
+
+      if (dir === 1 && currentPage < pagesData.length - 1) {
+        flipDirection = 1;
+        corner = { x: 0, y: H }; // تبدأ من الزاوية السفلية زي الفيديو بالظبط!
+        pointer = { x: 5, y: H - 5 };
+        target = { x: W * 1.35, y: H * 0.85 };
+        isAnimating = true;
+        playPaperSound();
+        animateToTarget(true);
+      } else if (dir === -1 && currentPage > 0) {
+        flipDirection = -1;
+        corner = { x: 0, y: H };
+        pointer = { x: W * 1.35, y: H * 0.85 };
+        target = { x: 0, y: H };
+        isAnimating = true;
+        playPaperSound();
+        animateToTarget(false);
+      }
+    }
+
+    // ربط الأحداث للموبايل والكمبيوتر
+    canvas.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+
+    canvas.addEventListener('touchstart', onStart, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+
+    window.addEventListener('resize', resize);
+    resize();
+    updateControls();
+  </script>
+</body>
+</html>
